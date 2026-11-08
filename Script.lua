@@ -5,7 +5,8 @@ local _print, _warn = print, warn
 print = function() end
 warn = function() end
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:HttpGet("https://pastebin.com/raw/6tv3Z0rn"))()
+
 
 
 -- ============================================================
