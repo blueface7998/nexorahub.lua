@@ -5,7 +5,8 @@ local _print, _warn = print, warn
 print = function() end
 warn = function() end
 
-local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/pvaxm/Fatal-Labs/refs/heads/main/rayfield%20plus.lua"))()
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
 
 -- ============================================================
 -- GAME ID WHITELIST (Arcade Basketball)
