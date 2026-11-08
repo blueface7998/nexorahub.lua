@@ -1,13 +1,11 @@
--- FATAL LABS — Arcade Basketball + Basketball Legends + Hoopz
+-- NEXORA HUB — Arcade Basketball + Basketball Legends + Hoopz
 -- ============================================================
 
 local _print, _warn = print, warn
 print = function() end
 warn = function() end
 
-local Rayfield = loadstring(game:HttpGet("https://pastebin.com/raw/6tv3Z0rn"))()
-
-
+local Rayfield = loadstring(game:HttpGet("https://pastebin.com/raw/6tv3Z0rn"))() 
 
 -- ============================================================
 -- GAME ID WHITELIST (Arcade Basketball)
@@ -17,6 +15,7 @@ local ARCADE_IDS = {
     [130736793665498] = true,
     [92216849541624]  = true,
     [95439417741900]  = true,
+    [6229116934]      = true,
 }
 
 -- ============================================================
@@ -35,7 +34,7 @@ local isBL     = BL_IDS[game.PlaceId] == true
 -- SHARED THEME
 -- ============================================================
 Rayfield:AddTheme({
-    Name = "Fatal Labs",
+    Name = "NEXORA HUB",
     CornerRoundness = UDim.new(0, 12),
     ElementCornerRadius = UDim.new(0, 8),
     PillCornerRadius = UDim.new(1, 0),
@@ -109,987 +108,14 @@ local Camera      = workspace.CurrentCamera
 local isMobile    = UserInputService.TouchEnabled
 
 -- ============================================================
--- BRANCH: ARCADE BASKETBALL
--- ============================================================
-if isArcade then
-    local Settings = {
-        Shooting = {
-            AutoGreen = false,
-            AutoGreenKeybind = Enum.KeyCode.E,
-            AutoGreenOnShootButton = true,
-        },
-        Player = { Walkspeed = false, WSvalue = 1.35, SpeedKeybind = Enum.KeyCode.RightShift },
-        AntiContest = {
-            Enabled = false,
-            Keybind = Enum.KeyCode.E,
-            Height = 25,
-        },
-        BallSize = {
-            Enabled = false,
-            Size = 6,
-            Transparency = 0.5,
-        },
-    }
-    local s = Settings
-
-    local Cleanup = { conns = {} }
-    local function Track(c)
-        if c then table.insert(Cleanup.conns, c) end
-        return c
-    end
-
-    local ShootRemote = nil
-    local function resolveShootRemote()
-        if ShootRemote and ShootRemote.Parent then return ShootRemote end
-        pcall(function()
-            local Events = ReplicatedStorage:FindFirstChild("Events")
-            ShootRemote = Events and Events:FindFirstChild("Shoot")
-        end)
-        return ShootRemote
-    end
-
-    local function fireAutoGreen()
-        local remote = resolveShootRemote()
-        if not remote then return false end
-        local ok = pcall(function()
-            remote:FireServer(table.unpack({ true, 100, false }))
-        end)
-        pcall(function()
-            remote:FireServer(table.unpack({ false, -1, true }))
-        end)
-        return ok
-    end
-
-    local greenLock = false
-    local function fireAutoGreenSafe()
-        if greenLock then return end
-        greenLock = true
-        fireAutoGreen()
-        task.delay(0.15, function() greenLock = false end)
-    end
-
-    local speedConnection = nil
-    local function enableSpeedBoost()
-        if speedConnection then speedConnection:Disconnect(); speedConnection = nil end
-        speedConnection = RunService.Heartbeat:Connect(function()
-            if not s.Player.Walkspeed then return end
-            local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChild("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hum or not hrp then return end
-            local moveDir = hum.MoveDirection
-            if moveDir.Magnitude > 0.05 then
-                local mult = math.clamp(s.Player.WSvalue or 1.35, 1, 3)
-                local targetVel = moveDir.Unit * (16 * mult)
-                local y = hrp.AssemblyLinearVelocity.Y
-                hrp.AssemblyLinearVelocity = Vector3.new(targetVel.X, y, targetVel.Z)
-            end
-        end)
-        Track(speedConnection)
-    end
-    local function disableSpeedBoost()
-        if speedConnection then speedConnection:Disconnect(); speedConnection = nil end
-    end
-
-    local ballResizeConn = nil
-    local trackedBalls = {}
-    local origData     = {}
-
-    local function isBallPart(inst)
-        if not inst:IsA("BasePart") then return false end
-        local n = string.lower(inst.Name)
-        return n:find("ball", 1, true) ~= nil
-    end
-
-    local function addTrackedBall(inst)
-        if not isBallPart(inst) then return end
-        if trackedBalls[inst] then return end
-        trackedBalls[inst] = true
-        origData[inst] = {
-            Size = inst.Size,
-            Transparency = inst.Transparency,
-        }
-        if s.BallSize.Enabled then
-            local size = tonumber(s.BallSize.Size) or 6
-            local trans = tonumber(s.BallSize.Transparency) or 0.5
-            pcall(function()
-                inst.Size = Vector3.new(size, size, size)
-                inst.Transparency = trans
-            end)
-        end
-    end
-
-    local function removeTrackedBall(inst)
-        if trackedBalls[inst] then
-            trackedBalls[inst] = nil
-            origData[inst] = nil
-        end
-    end
-
-    local function scanExistingBalls()
-        for _, inst in ipairs(workspace:GetDescendants()) do
-            addTrackedBall(inst)
-        end
-    end
-
-    local function applyBallSize()
-        local size = tonumber(s.BallSize.Size) or 6
-        local trans = tonumber(s.BallSize.Transparency) or 0.5
-        for part in pairs(trackedBalls) do
-            if part and part.Parent then
-                pcall(function()
-                    part.Size = Vector3.new(size, size, size)
-                    part.Transparency = trans
-                end)
-            else
-                removeTrackedBall(part)
-            end
-        end
-    end
-
-    local function restoreBallSize()
-        for part, data in pairs(origData) do
-            if part and part.Parent then
-                pcall(function()
-                    part.Size = data.Size
-                    part.Transparency = data.Transparency
-                end)
-            end
-        end
-        table.clear(origData)
-        table.clear(trackedBalls)
-    end
-
-    local ballAddedConn, ballRemovedConn = nil, nil
-
-    local function enableBallResizer()
-        scanExistingBalls()
-        ballAddedConn = workspace.DescendantAdded:Connect(function(inst)
-            if isBallPart(inst) then
-                task.defer(function()
-                    addTrackedBall(inst)
-                end)
-            end
-        end)
-        ballRemovedConn = workspace.DescendantRemoving:Connect(function(inst)
-            if isBallPart(inst) then
-                removeTrackedBall(inst)
-            end
-        end)
-        applyBallSize()
-
-        if ballResizeConn then ballResizeConn:Disconnect() end
-        ballResizeConn = RunService.Heartbeat:Connect(function()
-            if not s.BallSize.Enabled then return end
-            applyBallSize()
-        end)
-        Track(ballResizeConn)
-    end
-
-    local function disableBallResizer()
-        if ballAddedConn then ballAddedConn:Disconnect(); ballAddedConn = nil end
-        if ballRemovedConn then ballRemovedConn:Disconnect(); ballRemovedConn = nil end
-        if ballResizeConn then ballResizeConn:Disconnect(); ballResizeConn = nil end
-        restoreBallSize()
-    end
-
-    local antiContestLock = false
-    local function doAntiContest()
-        if antiContestLock then return end
-        antiContestLock = true
-        task.delay(0.1, function() antiContestLock = false end)
-
-        local char = LocalPlayer.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-
-        local height = tonumber(s.AntiContest.Height) or 25
-        hrp.CFrame = hrp.CFrame + Vector3.new(0, height, 0)
-    end
-
-    local Window = Rayfield:CreateWindow({
-        name = "Fatal Labs",
-        subtitle = "Arcade Basketball suite",
-        size = UDim2.fromOffset(420, 340),
-        font = Enum.Font.Gotham,
-        icon = 135101778515904,
-        sidebarLayout = true,
-        inlineDescription = true,
-        theme = "Fatal Labs",
-        userInfo = {
-            Title = LocalPlayer.DisplayName,
-            Subtitle = "@" .. LocalPlayer.Name,
-            Icons = 135101778515904,
-        },
-        openButton = isMobile and {
-            Title = "Fatal Labs",
-            Subtitle = "tap to open",
-            Icons = 135101778515904,
-        } or nil,
-        configuration = {
-            autoSave = true,
-            autoLoad = false,
-            fileName = "FatalLabsArcade",
-        },
-    })
-
-    pcall(function()
-        if Rayfield.SetTheme then Rayfield:SetTheme("Fatal Labs") end
-    end)
-
-    local Notify = function(props)
-        pcall(function() Window:Notify(props) end)
-    end
-
-    local CombatTab = Window:CreateTab({ name = "Combat", icon = "swords" })
-    local BallTab = Window:CreateTab({ name = "Ball", icon = "circle" })
-    local MovementTab = Window:CreateTab({ name = "Movement", icon = "move" })
-
-    CombatTab:CreateSection({ name = "Auto Green" })
-    CombatTab:CreateToggle({
-        name = "Auto Green",
-        description = "Fires Events.Shoot with the perfect-shot sequence.",
-        flag = "ab_autogreen",
-        value = s.Shooting.AutoGreen,
-        callback = function(v) s.Shooting.AutoGreen = v end,
-    })
-    CombatTab:CreateKeybind({
-        name = "Auto Green keybind",
-        description = "Hold then RELEASE this key to fire a green shot.",
-        flag = "ab_autogreen_key",
-        value = s.Shooting.AutoGreenKeybind,
-        callback = function(key)
-            if typeof(key) == "EnumItem" then s.Shooting.AutoGreenKeybind = key end
-        end,
-    })
-    CombatTab:CreateToggle({
-        name = "Auto Green on Shoot button",
-        description = "Fires the remote INSTANTLY when you RELEASE the in-game Shoot button.",
-        flag = "ab_autogreen_btn",
-        value = s.Shooting.AutoGreenOnShootButton,
-        callback = function(v) s.Shooting.AutoGreenOnShootButton = v end,
-    })
-    CombatTab:CreateButton({
-        name = "Fire Green Now",
-        callback = function()
-            if fireAutoGreen() then
-                Notify({ title = "Auto Green", content = "Shot fired.", duration = 2 })
-            else
-                Notify({ title = "Auto Green", content = "Remote not found.", duration = 3 })
-            end
-        end,
-    })
-
-    CombatTab:CreateSection({ name = "Anti Contest" })
-    CombatTab:CreateToggle({
-        name = "Anti Contest",
-        description = "Press E to teleport straight up (dodges contests).",
-        flag = "ab_ac",
-        value = s.AntiContest.Enabled,
-        callback = function(v) s.AntiContest.Enabled = v end,
-    })
-    CombatTab:CreateKeybind({
-        name = "Anti Contest keybind",
-        description = "Press this key to jump straight up.",
-        flag = "ab_ac_key",
-        value = s.AntiContest.Keybind,
-        callback = function(key)
-            if typeof(key) == "EnumItem" then s.AntiContest.Keybind = key end
-        end,
-    })
-    CombatTab:CreateSlider({
-        name = "Anti Contest height",
-        range = { 1, 25 }, increment = 1, suffix = " studs",
-        value = s.AntiContest.Height, flag = "ab_ac_h",
-        callback = function(v) s.AntiContest.Height = v end,
-    })
-
-    BallTab:CreateSection({ name = "Ball Resizer" })
-    BallTab:CreateToggle({
-        name = "Ball Resizer",
-        description = "Scales every ball part and sets its transparency to 0.5.",
-        flag = "ab_ballsize",
-        value = s.BallSize.Enabled,
-        callback = function(v)
-            s.BallSize.Enabled = v
-            if v then enableBallResizer() else disableBallResizer() end
-        end,
-    })
-    BallTab:CreateSlider({
-        name = "Ball size",
-        range = { 1, 12 }, increment = 1, suffix = " studs",
-        value = s.BallSize.Size, flag = "ab_ballsize_val",
-        callback = function(v)
-            s.BallSize.Size = v
-            if s.BallSize.Enabled then applyBallSize() end
-        end,
-    })
-
-    MovementTab:CreateSection({ name = "Speed" })
-    MovementTab:CreateToggle({
-        name = "Speed boost",
-        flag = "ab_ws",
-        value = s.Player.Walkspeed,
-        callback = function(v)
-            s.Player.Walkspeed = v
-            if v then enableSpeedBoost() else disableSpeedBoost() end
-        end,
-    })
-    MovementTab:CreateKeybind({
-        name = "Speed keybind",
-        flag = "ab_ws_key",
-        value = s.Player.SpeedKeybind,
-        callback = function(key)
-            if typeof(key) == "EnumItem" then s.Player.SpeedKeybind = key end
-        end,
-    })
-    MovementTab:CreateSlider({
-        name = "Speed multiplier",
-        range = { 1, 3 }, increment = 0.05,
-        value = s.Player.WSvalue, flag = "ab_ws_val",
-        callback = function(v) s.Player.WSvalue = v end,
-    })
-
-    do
-        local hookedButtons = {}
-        local pressedButtons = {}
-
-        local function matchesShoot(inst)
-            if not (inst:IsA("GuiButton") or inst:IsA("ImageButton")) then
-                return false
-            end
-            local n = string.lower(inst.Name)
-            if n == "shoot" or n:find("shoot", 1, true) then return true end
-            for _, d in ipairs(inst:GetDescendants()) do
-                if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-                    local t = string.lower(d.Text or "")
-                    if t:find("shoot", 1, true) then return true end
-                end
-            end
-            return false
-        end
-
-        local function onPress(inst)
-            if not s.Shooting.AutoGreen then return end
-            if not s.Shooting.AutoGreenOnShootButton then return end
-            pressedButtons[inst] = true
-        end
-
-        local function onRelease(inst)
-            if not s.Shooting.AutoGreen then return end
-            if not s.Shooting.AutoGreenOnShootButton then return end
-            if not pressedButtons[inst] then return end
-            pressedButtons[inst] = nil
-            fireAutoGreenSafe()
-        end
-
-        local function tryHook(inst)
-            if hookedButtons[inst] then return end
-            if not matchesShoot(inst) then return end
-            hookedButtons[inst] = true
-
-            Track(inst.MouseButton1Down:Connect(function() onPress(inst) end))
-            Track(inst.MouseButton1Up:Connect(function() onRelease(inst) end))
-
-            Track(inst.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.Touch
-                or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    onPress(inst)
-                end
-            end))
-            Track(inst.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.Touch
-                or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    onRelease(inst)
-                end
-            end))
-
-            Track(inst.MouseLeave:Connect(function()
-                if pressedButtons[inst] then onRelease(inst) end
-            end))
-        end
-
-        local function scanAndHook(root)
-            if not root then return end
-            for _, inst in ipairs(root:GetDescendants()) do
-                tryHook(inst)
-            end
-        end
-
-        local function watchRoot(root)
-            if not root then return end
-            Track(root.DescendantAdded:Connect(function(inst)
-                task.wait(0.05)
-                tryHook(inst)
-            end))
-        end
-
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            scanAndHook(pg)
-            watchRoot(pg)
-        end
-        Track(LocalPlayer.ChildAdded:Connect(function(child)
-            if child.Name == "PlayerGui" then
-                task.wait(0.5)
-                scanAndHook(child)
-                watchRoot(child)
-            end
-        end))
-
-        scanAndHook(workspace)
-        watchRoot(workspace)
-
-        Track(LocalPlayer.CharacterAdded:Connect(function(char)
-            task.wait(0.5)
-            scanAndHook(char)
-            watchRoot(char)
-        end))
-
-        pcall(function()
-            scanAndHook(CoreGui)
-            watchRoot(CoreGui)
-        end)
-    end
-
-    local eWasHeld = false
-
-    UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-
-        local greenBind = s.Shooting.AutoGreenKeybind
-        local greenKey = (type(greenBind) == "string") and Enum.KeyCode[greenBind] or greenBind
-        if input.KeyCode == greenKey then
-            if s.Shooting.AutoGreen then
-                eWasHeld = true
-            end
-            if s.AntiContest.Enabled then
-                local acBind = s.AntiContest.Keybind
-                local acKey = (type(acBind) == "string") and Enum.KeyCode[acBind] or acBind
-                if input.KeyCode == acKey then
-                    doAntiContest()
-                end
-            end
-            return
-        end
-
-        local acBind = s.AntiContest.Keybind
-        local acKey = (type(acBind) == "string") and Enum.KeyCode[acBind] or acBind
-        if input.KeyCode == acKey and s.AntiContest.Enabled then
-            doAntiContest()
-            return
-        end
-
-        local speedBind = s.Player.SpeedKeybind
-        local speedKey = (type(speedBind) == "string") and Enum.KeyCode[speedBind] or speedBind
-        if input.KeyCode == speedKey then
-            s.Player.Walkspeed = not s.Player.Walkspeed
-            if s.Player.Walkspeed then enableSpeedBoost() else disableSpeedBoost() end
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input, gpe)
-        if gpe then return end
-
-        local greenBind = s.Shooting.AutoGreenKeybind
-        local greenKey = (type(greenBind) == "string") and Enum.KeyCode[greenBind] or greenBind
-        if input.KeyCode == greenKey and eWasHeld then
-            eWasHeld = false
-            if not s.Shooting.AutoGreen then return end
-            fireAutoGreenSafe()
-        end
-    end)
-
-    local function cleanup()
-        pcall(disableSpeedBoost)
-        pcall(disableBallResizer)
-        for _, c in Cleanup.conns do pcall(function() c:Disconnect() end) end
-    end
-    Track(LocalPlayer.AncestryChanged:Connect(function()
-        if not LocalPlayer.Parent then cleanup() end
-    end))
-
--- ============================================================
--- BRANCH: BASKETBALL LEGENDS
--- ============================================================
-elseif isBL then
-    local Settings = {
-        Shooting = {
-            AutoGreen = false,
-            AutoGreenKeybind = Enum.KeyCode.E,
-            AutoGreenOnJump = false,
-            AutoGreenOnShootButton = true,
-        },
-        Player = { Walkspeed = false, WSvalue = 1.35, SpeedKeybind = Enum.KeyCode.RightShift },
-        Mag = {
-            Enabled = false,
-            BallName = "Ball",
-            Reach = 20,
-            Keybind = Enum.KeyCode.L,
-        },
-    }
-    local s = Settings
-
-    local Cleanup = { conns = {} }
-    local function Track(c)
-        if c then table.insert(Cleanup.conns, c) end
-        return c
-    end
-
-    local ShootRemote = nil
-    local function resolveShootRemote()
-        if ShootRemote and ShootRemote.Parent then return ShootRemote end
-        pcall(function()
-            local Packages = ReplicatedStorage:FindFirstChild("Packages")
-            local Knit = Packages and Packages:FindFirstChild("Knit")
-            local Services = Knit and Knit:FindFirstChild("Services")
-            local ControlService = Services and Services:FindFirstChild("ControlService")
-            local RE = ControlService and ControlService:FindFirstChild("RE")
-            ShootRemote = RE and RE:FindFirstChild("Shoot")
-        end)
-        return ShootRemote
-    end
-
-    local function fireAutoGreen()
-        local remote = resolveShootRemote()
-        if remote then
-            local ok = pcall(function() remote:FireServer(1) end)
-            return ok
-        end
-        return false
-    end
-
-    local greenLock = false
-    local function fireAutoGreenSafe()
-        if greenLock then return end
-        greenLock = true
-        fireAutoGreen()
-        task.delay(0.15, function() greenLock = false end)
-    end
-
-    local speedConnection = nil
-    local function enableSpeedBoost()
-        if speedConnection then speedConnection:Disconnect(); speedConnection = nil end
-        speedConnection = RunService.Heartbeat:Connect(function()
-            if not s.Player.Walkspeed then return end
-            local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChild("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hum or not hrp then return end
-            local moveDir = hum.MoveDirection
-            if moveDir.Magnitude > 0.05 then
-                local mult = math.clamp(s.Player.WSvalue or 1.35, 1, 3)
-                local targetVel = moveDir.Unit * (16 * mult)
-                local y = hrp.AssemblyLinearVelocity.Y
-                hrp.AssemblyLinearVelocity = Vector3.new(targetVel.X, y, targetVel.Z)
-            end
-        end)
-        Track(speedConnection)
-    end
-    local function disableSpeedBoost()
-        if speedConnection then speedConnection:Disconnect(); speedConnection = nil end
-    end
-
-    -- FAST MAG (cached, rebuilt every 0.5s, cheap per-frame)
-    local magConnection = nil
-    local magRefreshThread = nil
-    local magCache = {}
-
-    local function rebuildMagCache()
-        table.clear(magCache)
-        local targetName = s.Mag.BallName
-        for _, inst in ipairs(workspace:GetDescendants()) do
-            if inst:IsA("BasePart") and inst.Name == targetName then
-                local hasTouch = inst:FindFirstChildWhichIsA("TouchTransmitter")
-                    or inst:FindFirstChild("TouchInterest")
-                if hasTouch then
-                    magCache[#magCache + 1] = inst
-                end
-            end
-        end
-    end
-
-    local function magTick()
-        if not s.Mag.Enabled then return end
-        local character = LocalPlayer.Character
-        if not character then return end
-        if character:FindFirstChild("Basketball") then return end
-
-        local touchPart = character:FindFirstChild("HumanoidRootPart")
-            or character:FindFirstChild("RightFoot")
-            or character:FindFirstChild("Head")
-        if not touchPart then return end
-
-        local reach = tonumber(s.Mag.Reach) or 20
-        local reachSq = reach * reach
-        local origin = touchPart.Position
-
-        for i = #magCache, 1, -1 do
-            local part = magCache[i]
-            if not part or not part.Parent then
-                table.remove(magCache, i)
-            else
-                local d = origin - part.Position
-                if (d.X*d.X + d.Y*d.Y + d.Z*d.Z) <= reachSq then
-                    pcall(function()
-                        firetouchinterest(touchPart, part, 0)
-                        firetouchinterest(touchPart, part, 1)
-                    end)
-                    if part.Anchored == false then
-                        part.AssemblyLinearVelocity = (touchPart.Position - part.Position) * 30
-                    end
-                end
-            end
-        end
-    end
-
-    local function enableMag()
-        if magConnection then magConnection:Disconnect(); magConnection = nil end
-        if magRefreshThread then task.cancel(magRefreshThread); magRefreshThread = nil end
-
-        rebuildMagCache()
-
-        magRefreshThread = task.spawn(function()
-            while s.Mag.Enabled do
-                task.wait(0.5)
-                if s.Mag.Enabled then
-                    rebuildMagCache()
-                end
-            end
-        end)
-
-        magConnection = RunService.Heartbeat:Connect(function()
-            pcall(magTick)
-        end)
-        Track(magConnection)
-    end
-
-    local function disableMag()
-        if magConnection then magConnection:Disconnect(); magConnection = nil end
-        if magRefreshThread then task.cancel(magRefreshThread); magRefreshThread = nil end
-        table.clear(magCache)
-    end
-
-    local Window = Rayfield:CreateWindow({
-        name = "Fatal Labs",
-        subtitle = "BL suite",
-        size = UDim2.fromOffset(420, 320),
-        font = Enum.Font.Gotham,
-        icon = 135101778515904,
-        sidebarLayout = true,
-        inlineDescription = true,
-        theme = "Fatal Labs",
-        userInfo = {
-            Title = LocalPlayer.DisplayName,
-            Subtitle = "@" .. LocalPlayer.Name,
-            Icons = 135101778515904,
-        },
-        openButton = isMobile and {
-            Title = "Fatal Labs",
-            Subtitle = "tap to open",
-            Icons = 135101778515904,
-        } or nil,
-        configuration = {
-            autoSave = true,
-            autoLoad = false,
-            fileName = "FatalLabsBL",
-        },
-    })
-
-    pcall(function()
-        if Rayfield.SetTheme then Rayfield:SetTheme("Fatal Labs") end
-    end)
-
-    local Notify = function(props)
-        pcall(function() Window:Notify(props) end)
-    end
-
-    local CombatTab = Window:CreateTab({ name = "Combat", icon = "swords" })
-    local BallTab = Window:CreateTab({ name = "Ball", icon = "circle" })
-    local MovementTab = Window:CreateTab({ name = "Movement", icon = "move" })
-
-    CombatTab:CreateSection({ name = "Auto Green" })
-    CombatTab:CreateToggle({
-        name = "Auto Green",
-        description = "Fires ControlService.RE.Shoot with argument 1 (perfect shot).",
-        flag = "bl_autogreen",
-        value = s.Shooting.AutoGreen,
-        callback = function(v)
-            s.Shooting.AutoGreen = v
-        end,
-    })
-    CombatTab:CreateKeybind({
-        name = "Auto Green keybind",
-        description = "Hold then RELEASE this key to fire a green shot.",
-        flag = "bl_autogreen_key",
-        value = s.Shooting.AutoGreenKeybind,
-        callback = function(key)
-            if typeof(key) == "EnumItem" then s.Shooting.AutoGreenKeybind = key end
-        end,
-    })
-    CombatTab:CreateToggle({
-        name = "Auto Green on Jump",
-        description = "Fires the remote automatically after you jump-shot.",
-        flag = "bl_autogreen_jump",
-        value = s.Shooting.AutoGreenOnJump,
-        callback = function(v) s.Shooting.AutoGreenOnJump = v end,
-    })
-    CombatTab:CreateToggle({
-        name = "Auto Green on Shoot button",
-        description = "Fires the remote INSTANTLY when you RELEASE the in-game Shoot button.",
-        flag = "bl_autogreen_btn",
-        value = s.Shooting.AutoGreenOnShootButton,
-        callback = function(v) s.Shooting.AutoGreenOnShootButton = v end,
-    })
-    CombatTab:CreateButton({
-        name = "Fire Green Now",
-        callback = function()
-            if fireAutoGreen() then
-                Notify({ title = "Auto Green", content = "Shot fired.", duration = 2 })
-            else
-                Notify({ title = "Auto Green", content = "Remote not found.", duration = 3 })
-            end
-        end,
-    })
-
-    BallTab:CreateSection({ name = "Mag" })
-    BallTab:CreateToggle({
-        name = "Mag",
-        description = "Fast cached magnet. Auto firetouchinterest on nearby balls.",
-        flag = "bl_mag",
-        value = s.Mag.Enabled,
-        callback = function(v)
-            s.Mag.Enabled = v
-            if v then enableMag() else disableMag() end
-        end,
-    })
-    BallTab:CreateKeybind({
-        name = "Mag keybind",
-        description = "Press this key to toggle Mag on/off.",
-        flag = "bl_mag_key",
-        value = s.Mag.Keybind,
-        callback = function(key)
-            if typeof(key) == "EnumItem" then s.Mag.Keybind = key end
-        end,
-    })
-    BallTab:CreateInput({
-        name = "Ball name",
-        description = "Name of the part to magnet (default: Ball).",
-        placeholder = "Ball",
-        value = s.Mag.BallName,
-        flag = "bl_mag_name",
-        callback = function(text)
-            if text ~= "" then
-                s.Mag.BallName = text
-                if s.Mag.Enabled then rebuildMagCache() end
-            end
-        end,
-    })
-    BallTab:CreateSlider({
-        name = "Reach (studs)",
-        range = { 1, 100 }, increment = 1,
-        value = s.Mag.Reach, flag = "bl_mag_reach",
-        callback = function(v) s.Mag.Reach = v end,
-    })
-
-    MovementTab:CreateSection({ name = "Speed" })
-    MovementTab:CreateToggle({
-        name = "Speed boost",
-        flag = "bl_ws",
-        value = s.Player.Walkspeed,
-        callback = function(v)
-            s.Player.Walkspeed = v
-            if v then enableSpeedBoost() else disableSpeedBoost() end
-        end,
-    })
-    MovementTab:CreateKeybind({
-        name = "Speed keybind",
-        flag = "bl_ws_key",
-        value = s.Player.SpeedKeybind,
-        callback = function(key)
-            if typeof(key) == "EnumItem" then s.Player.SpeedKeybind = key end
-        end,
-    })
-    MovementTab:CreateSlider({
-        name = "Speed multiplier",
-        range = { 1, 3 }, increment = 0.05,
-        value = s.Player.WSvalue, flag = "bl_ws_val",
-        callback = function(v) s.Player.WSvalue = v end,
-    })
-
-    local function setupAutoGreenChar(char)
-        local hum = char:WaitForChild("Humanoid", 5)
-        if not hum then return end        Track(hum.Jumping:Connect(function(active)
-            if not active then return end
-            if not s.Shooting.AutoGreen then return end
-            if not s.Shooting.AutoGreenOnJump then return end
-            if not char:FindFirstChild("Basketball") then return end
-            fireAutoGreenSafe()
-        end))
-    end
-    if LocalPlayer.Character then setupAutoGreenChar(LocalPlayer.Character) end
-    Track(LocalPlayer.CharacterAdded:Connect(setupAutoGreenChar))
-
-    do
-        local hookedButtons = {}
-        local pressedButtons = {}
-
-        local function matchesShoot(inst)
-            if not (inst:IsA("GuiButton") or inst:IsA("ImageButton")) then
-                return false
-            end
-            local n = string.lower(inst.Name)
-            if n == "shoot" or n:find("shoot", 1, true) then return true end
-            for _, d in ipairs(inst:GetDescendants()) do
-                if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-                    local t = string.lower(d.Text or "")
-                    if t:find("shoot", 1, true) then return true end
-                end
-            end
-            return false
-        end
-
-        local function onPress(inst)
-            if not s.Shooting.AutoGreen then return end
-            if not s.Shooting.AutoGreenOnShootButton then return end
-            pressedButtons[inst] = true
-        end
-
-        local function onRelease(inst)
-            if not s.Shooting.AutoGreen then return end
-            if not s.Shooting.AutoGreenOnShootButton then return end
-            if not pressedButtons[inst] then return end
-            pressedButtons[inst] = nil
-            fireAutoGreenSafe()
-        end
-
-        local function tryHook(inst)
-            if hookedButtons[inst] then return end
-            if not matchesShoot(inst) then return end
-            hookedButtons[inst] = true
-
-            Track(inst.MouseButton1Down:Connect(function() onPress(inst) end))
-            Track(inst.MouseButton1Up:Connect(function() onRelease(inst) end))
-
-            Track(inst.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.Touch
-                or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    onPress(inst)
-                end
-            end))
-            Track(inst.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.Touch
-                or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    onRelease(inst)
-                end
-            end))
-
-            Track(inst.MouseLeave:Connect(function()
-                if pressedButtons[inst] then onRelease(inst) end
-            end))
-        end
-
-        local function scanAndHook(root)
-            if not root then return end
-            for _, inst in ipairs(root:GetDescendants()) do
-                tryHook(inst)
-            end
-        end
-
-        local function watchRoot(root)
-            if not root then return end
-            Track(root.DescendantAdded:Connect(function(inst)
-                task.wait(0.05)
-                tryHook(inst)
-            end))
-        end
-
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            scanAndHook(pg)
-            watchRoot(pg)
-        end
-        Track(LocalPlayer.ChildAdded:Connect(function(child)
-            if child.Name == "PlayerGui" then
-                task.wait(0.5)
-                scanAndHook(child)
-                watchRoot(child)
-            end
-        end))
-
-        scanAndHook(workspace)
-        watchRoot(workspace)
-
-        Track(LocalPlayer.CharacterAdded:Connect(function(char)
-            task.wait(0.5)
-            scanAndHook(char)
-            watchRoot(char)
-        end))
-
-        pcall(function()
-            scanAndHook(CoreGui)
-            watchRoot(CoreGui)
-        end)
-    end
-
-    local eWasHeld = false
-
-    UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
-
-        local greenBind = s.Shooting.AutoGreenKeybind
-        local greenKey = (type(greenBind) == "string") and Enum.KeyCode[greenBind] or greenBind
-        if input.KeyCode == greenKey then
-            if not s.Shooting.AutoGreen then return end
-            eWasHeld = true
-            return
-        end
-
-        local magBind = s.Mag.Keybind
-        local magKey = (type(magBind) == "string") and Enum.KeyCode[magBind] or magBind
-        if input.KeyCode == magKey then
-            s.Mag.Enabled = not s.Mag.Enabled
-            if s.Mag.Enabled then enableMag() else disableMag() end
-            return
-        end
-
-        local speedBind = s.Player.SpeedKeybind
-        local speedKey = (type(speedBind) == "string") and Enum.KeyCode[speedBind] or speedBind
-        if input.KeyCode == speedKey then
-            s.Player.Walkspeed = not s.Player.Walkspeed
-            if s.Player.Walkspeed then enableSpeedBoost() else disableSpeedBoost() end
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input, gpe)
-        if gpe then return end
-
-        local greenBind = s.Shooting.AutoGreenKeybind
-        local greenKey = (type(greenBind) == "string") and Enum.KeyCode[greenBind] or greenBind
-        if input.KeyCode == greenKey and eWasHeld then
-            eWasHeld = false
-            if not s.Shooting.AutoGreen then return end
-            fireAutoGreenSafe()
-        end
-    end)
-
-    local function cleanup()
-        pcall(disableSpeedBoost)
-        pcall(disableMag)
-        for _, c in Cleanup.conns do pcall(function() c:Disconnect() end) end
-    end
-    Track(LocalPlayer.AncestryChanged:Connect(function()
-        if not LocalPlayer.Parent then cleanup() end
-    end))
-
--- ============================================================
 -- BRANCH: HOOPZ
 -- ============================================================
-else
+if not isArcade and not isBL then
     local TweenService = game:GetService("TweenService")
     local HttpService  = game:GetService("HttpService")
-    local DeviceEvent  = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("deviceEvent")
+    
+    local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+    local DeviceEvent = remotesFolder and remotesFolder:WaitForChild("deviceEvent", 5)
 
     local Settings = {
         Shooting = {
@@ -1126,7 +152,7 @@ else
     local s = Settings
 
     local Cleanup = { conns = {}, fns = {} }
-    local function Track(c) table.insert(Cleanup.conns, c); return c end
+    local function Track(c) if c then table.insert(Cleanup.conns, c) end return c end
     local function OnCleanup(fn) table.insert(Cleanup.fns, fn) end
 
     local setAural, setGuard, setMagnet, setReach, setSpeed, setTPWalk, setMagV2
@@ -1142,34 +168,11 @@ else
 
     local function hasball(char) return char and char:FindFirstChild("Basketball") ~= nil end
 
-    local fieldGoals = {}
-    for _, inst in ipairs(workspace:GetDescendants()) do
-        if inst.Name == "FieldGoal" and inst:IsA("BasePart") then
-            table.insert(fieldGoals, inst)
-        end
-    end
-
-    local function getclosestdunkfunc()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return nil end
-        local pos = hrp.Position
-        for i = #fieldGoals, 1, -1 do
-            local v = fieldGoals[i]
-            if not v.Parent then
-                table.remove(fieldGoals, i)
-            elseif (pos - v.Position).Magnitude <= 13 then
-                return v:FindFirstChild("dunkFunction")
-            end
-        end
-        return nil
-    end
-
     local goals = {}
     local goalsDirty = true
 
     local function validgoal(o)
-        if not o:IsA("BasePart") then return false end
+        if not o or not o:IsA("BasePart") then return false end
         local n = string.lower(o.Name)
         if n ~= "goal" and n ~= "goalhome" and n ~= "goalaway" then return false end
         local p = o.Parent
@@ -1184,7 +187,7 @@ else
 
     local function rebuildGoals()
         table.clear(goals)
-        for _, o in workspace:GetDescendants() do
+        for _, o in ipairs(workspace:GetDescendants()) do
             if validgoal(o) then table.insert(goals, o) end
         end
         goalsDirty = false
@@ -1202,9 +205,9 @@ else
     local courtPlayerCache = {}
     local function rebuildCourtCache()
         table.clear(courtPlayerCache)
-        for _, inst in next, workspace:GetChildren() do
+        for _, inst in ipairs(workspace:GetChildren()) do
             if inst.Name == "Courts" then
-                for _, court in next, inst:GetChildren() do
+                for _, court in ipairs(inst:GetChildren()) do
                     local cp = court:FindFirstChild("_CourtPlayers")
                     if cp then table.insert(courtPlayerCache, cp) end
                 end
@@ -1244,24 +247,26 @@ else
 
     local function getTeammates()
         local tms = {}
-        for _, cp in next, courtPlayerCache do
-            if not cp.Parent then continue end
-            local myTeam = nil
-            for _, v in next, cp:GetChildren() do
-                if v:IsA("ObjectValue") and v.Value == LocalPlayer then
-                    myTeam = teamOf(v.Name)
+        for _, cp in ipairs(courtPlayerCache) do
+            if cp and cp.Parent then
+                local myTeam = nil
+                for _, v in ipairs(cp:GetChildren()) do
+                    if v:IsA("ObjectValue") and v.Value == LocalPlayer then
+                        myTeam = teamOf(v.Name)
+                        break
+                    end
+                end
+                if myTeam then
+                    for _, tm in ipairs(cp:GetChildren()) do
+                        if tm:IsA("ObjectValue") and typeof(tm.Value) == "Instance"
+                            and tm.Value:IsA("Player") and tm.Value ~= LocalPlayer
+                            and teamOf(tm.Name) == myTeam then
+                            table.insert(tms, tm.Value)
+                        end
+                    end
                     break
                 end
             end
-            if not myTeam then continue end
-            for _, tm in next, cp:GetChildren() do
-                if tm:IsA("ObjectValue") and typeof(tm.Value) == "Instance"
-                    and tm.Value:IsA("Player") and tm.Value ~= LocalPlayer
-                    and teamOf(tm.Name) == myTeam then
-                    table.insert(tms, tm.Value)
-                end
-            end
-            break
         end
         return tms
     end
@@ -1286,17 +291,22 @@ else
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
         local closestPlayer, closestDistance = nil, math.huge
-        for _, part in workspace:GetPartBoundsInRadius(root.Position, s.Defending.AutoGuardRange) do
-            if part:IsA("BasePart") and part.Name == "Ball" and part.Parent:IsA("Folder") then
-                local holder = part.Parent.Parent
-                local holderRoot = holder and holder:FindFirstChild("HumanoidRootPart")
-                if holderRoot then
-                    local distance = (holderRoot.Position - root.Position).Magnitude
-                    if distance < closestDistance then
-                        local holderPlayer = Players:GetPlayerFromCharacter(holder)
-                        if holderPlayer and not isTeammatePlayer(holderPlayer) then
-                            closestDistance = distance
-                            closestPlayer = holderPlayer
+        local success, parts = pcall(function()
+            return workspace:GetPartBoundsInRadius(root.Position, s.Defending.AutoGuardRange)
+        end)
+        if success and parts then
+            for _, part in ipairs(parts) do
+                if part:IsA("BasePart") and part.Name == "Ball" and part.Parent and part.Parent:IsA("Folder") then
+                    local holder = part.Parent.Parent
+                    local holderRoot = holder and holder:FindFirstChild("HumanoidRootPart")
+                    if holderRoot then
+                        local distance = (holderRoot.Position - root.Position).Magnitude
+                        if distance < closestDistance then
+                            local holderPlayer = Players:GetPlayerFromCharacter(holder)
+                            if holderPlayer and not isTeammatePlayer(holderPlayer) then
+                                closestDistance = distance
+                                closestPlayer = holderPlayer
+                            end
                         end
                     end
                 end
@@ -1313,14 +323,15 @@ else
         local rootPos = root.Position
         local range = s.Defending.AutoGuardRange
         for _, player in ipairs(Players:GetPlayers()) do
-            if player == LocalPlayer then continue end
-            local c = player.Character
-            local hrp = c and c:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local dist = (hrp.Position - rootPos).Magnitude
-                if dist < range and dist < closestDistance and not isTeammatePlayer(player) then
-                    closestDistance = dist
-                    closestPlayer = player
+            if player ~= LocalPlayer then
+                local c = player.Character
+                local hrp = c and c:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (hrp.Position - rootPos).Magnitude
+                    if dist < range and dist < closestDistance and not isTeammatePlayer(player) then
+                        closestDistance = dist
+                        closestPlayer = player
+                    end
                 end
             end
         end
@@ -1441,6 +452,7 @@ else
                     else
                         guardPos = getNearestGuardPosition(nearest)
                     end
+                    if guardPos then myHum:MoveTo(guardPos) end
                 end
             end
         end)
@@ -1483,9 +495,11 @@ else
         magnetHitbox.Touched:Connect(function(part)
             if not s.Ball.BallMags or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Basketball")) then return end
             if part.Name == "Ball" or (part.Parent and part.Parent.Name == "Basketball") then
-                firetouchinterest(head, part, 0)
-                task.wait()
-                firetouchinterest(head, part, 1)
+                pcall(function()
+                    firetouchinterest(head, part, 0)
+                    task.wait()
+                    firetouchinterest(head, part, 1)
+                end)
             end
         end)
     end
@@ -1537,17 +551,20 @@ else
         if not head then return end
         local range = s.Ball.BallReachRange or 10
         for _, player in ipairs(Players:GetPlayers()) do
-            if player == LocalPlayer then continue end
-            local pChar = player.Character
-            if pChar then
-                local basketball = pChar:FindFirstChild("Basketball")
-                if basketball then
-                    local ballPart = basketball:FindFirstChild("Ball") or basketball:FindFirstChildOfClass("BasePart")
-                    if ballPart and (head.Position - ballPart.Position).Magnitude <= range then
-                        firetouchinterest(head, ballPart, 0)
-                        task.wait()
-                        firetouchinterest(head, ballPart, 1)
-                        return
+            if player ~= LocalPlayer then
+                local pChar = player.Character
+                if pChar then
+                    local basketball = pChar:FindFirstChild("Basketball")
+                    if basketball then
+                        local ballPart = basketball:FindFirstChild("Ball") or basketball:FindFirstChildOfClass("BasePart")
+                        if ballPart and (head.Position - ballPart.Position).Magnitude <= range then
+                            pcall(function()
+                                firetouchinterest(head, ballPart, 0)
+                                task.wait()
+                                firetouchinterest(head, ballPart, 1)
+                            end)
+                            return
+                        end
                     end
                 end
             end
@@ -1561,13 +578,14 @@ else
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
         if myRoot then
             for _, p in ipairs(Players:GetPlayers()) do
-                if p == LocalPlayer then continue end
-                local c = p.Character
-                local b = c and c:FindFirstChild("Basketball")
-                local r = c and c:FindFirstChild("HumanoidRootPart")
-                if b and r then
-                    local d = (myRoot.Position - r.Position).Magnitude
-                    if d < closestDist then closestDist = d; closest = p end
+                if p ~= LocalPlayer then
+                    local c = p.Character
+                    local b = c and c:FindFirstChild("Basketball")
+                    local r = c and c:FindFirstChild("HumanoidRootPart")
+                    if b and r then
+                        local d = (myRoot.Position - r.Position).Magnitude
+                        if d < closestDist then closestDist = d; closest = p end
+                    end
                 end
             end
         end
@@ -1685,15 +703,17 @@ else
         if not touchPart then return end
         local ballName = s.MagV2.BallName
         local reach = tonumber(s.MagV2.Reach) or 20
-        for _, object in pairs(workspace:GetDescendants()) do
+        for _, object in ipairs(workspace:GetDescendants()) do
             if object.Name == ballName and object:IsA("BasePart") then
                 local touchInterest = object:FindFirstChildWhichIsA("TouchTransmitter") or object:FindFirstChild("TouchInterest")
                 if touchInterest then
                     local distance = (touchPart.Position - object.Position).Magnitude
                     if distance <= reach then
-                        firetouchinterest(touchPart, object, 0)
-                        task.wait()
-                        firetouchinterest(touchPart, object, 1)
+                        pcall(function()
+                            firetouchinterest(touchPart, object, 0)
+                            task.wait()
+                            firetouchinterest(touchPart, object, 1)
+                        end)
                     end
                 end
             end
@@ -1716,7 +736,7 @@ else
     local function loadEffects()
         pcall(function()
             local folder = ReplicatedStorage.ShopItems.Effect
-            for _, eff in folder:GetChildren() do
+            for _, eff in ipairs(folder:GetChildren()) do
                 Effects[eff.Name:gsub("Effect_", "")] = eff
             end
         end)
@@ -1734,16 +754,20 @@ else
         end)
         if goalEventHook then return end
         pcall(function()
-            local connections = getconnections(ReplicatedStorage.Remotes.goalEvent.OnClientEvent)
-            if connections and connections[1] then
-                local old
-                old = hookfunction(connections[1].Function, function(Player, Court, Goal, XYZ, GoalEffect, Unknown)
-                    if Player == LocalPlayer and s.Goal.Enabled then
-                        GoalEffect = Effects[s.Goal.CurrentEffect].Value
-                    end
-                    return old(Player, Court, Goal, XYZ, GoalEffect, Unknown)
-                end)
-                goalEventHook = old
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            local goalEvent = remotes and remotes:FindFirstChild("goalEvent")
+            if goalEvent then
+                local connections = getconnections(goalEvent.OnClientEvent)
+                if connections and connections[1] then
+                    local old
+                    old = hookfunction(connections[1].Function, function(Player, Court, Goal, XYZ, GoalEffect, Unknown)
+                        if Player == LocalPlayer and s.Goal.Enabled then
+                            GoalEffect = Effects[s.Goal.CurrentEffect].Value
+                        end
+                        return old(Player, Court, Goal, XYZ, GoalEffect, Unknown)
+                    end)
+                    goalEventHook = old
+                end
             end
         end)
     end
@@ -1757,7 +781,7 @@ else
     end
 
     local function SpoofDevice()
-        if not s.Misc.DeviceSpoofer then return end
+        if not s.Misc.DeviceSpoofer or not DeviceEvent then return end
         local device = s.Misc.Device
         if device == "PC" then DeviceEvent:FireServer("Desktop")
         elseif device == "Mobile" then DeviceEvent:FireServer("Mobile")
@@ -1777,7 +801,7 @@ else
             local detected = {}
             while s.Misc.AntiModerator do
                 task.wait(1)
-                for _, moderator in next, Players:GetPlayers() do
+                for _, moderator in ipairs(Players:GetPlayers()) do
                     if table.find(Moderators, moderator.Name) and not detected[moderator.UserId] then
                         detected[moderator.UserId] = true
                         if Notify then
@@ -1803,7 +827,7 @@ else
     pcall(function()
         Replicator = require(ReplicatedStorage.Util.Replicator)
         OriginalReplicateBall = Replicator["ReplicateBall"]
-        for _, ballItem in ReplicatedStorage.ShopItems.Ball:GetChildren() do
+        for _, ballItem in ipairs(ReplicatedStorage.ShopItems.Ball:GetChildren()) do
             local name = ballItem.Name:gsub("Ball_", "")
             Balls[name] = ballItem.Name
             table.insert(BallNames, name)
@@ -1811,11 +835,7 @@ else
         table.sort(BallNames)
     end)
 
-    -- ============================================================
-    -- BALL CHANGER (only spoofs YOUR ball)
-    -- ============================================================
     local function ownerOfParent(parent)
-        -- Walk up from the ball container to find the character model it lives under.
         local node = parent
         for _ = 1, 6 do
             if not node then break end
@@ -1831,7 +851,6 @@ else
     local function applyBallChanger()
         if not Replicator or not OriginalReplicateBall then return end
         Replicator["ReplicateBall"] = function(Parent, Name)
-            -- Only rewrite the ball when the container belongs to the LocalPlayer.
             local owner = ownerOfParent(Parent)
             if owner == LocalPlayer then
                 local spoofed = Balls[s.BallChanger.CurrentBall]
@@ -1941,8 +960,8 @@ else
     }
 
     local function getArcOffset(dist)
-        local isMobile = UserInputService.TouchEnabled
-        if isMobile then
+        local isMobileInput = UserInputService.TouchEnabled
+        if isMobileInput then
             local d = math.floor(dist + 0.5)
             if d < 30 then d = 30 end
             if d > 73 then d = 73 end
@@ -1974,19 +993,6 @@ else
         return 100
     end
 
-    local function setpower(p)
-        LocalPlayer:SetAttribute("Power", p)
-        pcall(function() SharedTableRegistry:GetSharedTable("PowerData").Power = p end)
-    end
-
-    local function restoreMouseBehavior()
-        pcall(function()
-            if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
-                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            end
-        end)
-    end
-
     local Icon = nil
     local IconCenter = nil
     do
@@ -2009,7 +1015,7 @@ else
         actors = {}, oldnewindex = nil, active = true, clicking = false
     }
 
-    local function addconnection(c) table.insert(state.connections, c); return c end
+    local function addconnection(c) if c then table.insert(state.connections, c) end return c end
 
     local function settarget(target)
         state.target = target
@@ -2019,7 +1025,7 @@ else
     local function doClick()
         if state.clicking then return end
         state.clicking = true
-        getgenv().__fatal_aiming = true
+        pcall(function() getgenv().__NEXORA_aiming = true end)
         if isMobile then
             if Icon then
                 local pos = Vector2.new(Icon.AbsolutePosition.X + Icon.AbsoluteSize.X / 2, Icon.AbsolutePosition.Y + Icon.AbsoluteSize.Y / 2)
@@ -2036,7 +1042,7 @@ else
         end
         task.delay(0.35, function()
             state.clicking = false
-            getgenv().__fatal_aiming = false
+            pcall(function() getgenv().__fatal_aiming = false end)
         end)
     end
 
@@ -2122,7 +1128,7 @@ pcall(function()
         return oldviewport(self, ...)
     end)
     local cameradata = registry:GetSharedTable("CameraData")
-    local history = cameradata.CameraHistory
+    local history = cameradata and cameradata.CameraHistory
     local meta = getrawmetatable(cameradata)
     local oldnewindex
     oldnewindex = hookfunction(meta.__newindex, newcclosure(function(tab, key, value)
@@ -2141,7 +1147,7 @@ end)
             state.actorst = SharedTableRegistry:GetSharedTable(state.actorname)
             state.actorst.t = nil
             local cameradata = SharedTableRegistry:GetSharedTable("CameraData")
-            local history = cameradata.CameraHistory
+            local history = cameradata and cameradata.CameraHistory
             local meta = getrawmetatable(cameradata)
             state.oldnewindex = hookfunction(meta.__newindex, newcclosure(function(tab, key, value)
                 local current = tab == cameradata and key == "CameraCFrame"
@@ -2164,7 +1170,7 @@ end)
         local ok, actors = pcall(getactors)
         if not ok or type(actors) ~= "table" then return end
         local code = "local __fatalaimtable = " .. string.format("%q", state.actorname) .. " " .. actorcode
-        for _, actor in actors do
+        for _, actor in ipairs(actors) do
             if not state.actors[actor] then
                 if pcall(run_on_actor, actor, code) then
                     state.actors[actor] = true
@@ -2223,7 +1229,7 @@ end)
             targetPos = targetPos or goal.Position + Vector3.new(0, arc, 0)
             settarget(targetPos)
             task.wait(0.05)
-            LocalPlayer:SetAttribute("Power", 85)
+            pcall(function() LocalPlayer:SetAttribute("Power", 85) end)
             local shotdelay = s.Shooting.ShotDelay or 0.25
             if s.Shooting.RandomizeShotDelay then
                 local mn = s.Shooting.ShotDelayMin or 0.15
@@ -2366,36 +1372,36 @@ end)
     setupOwnNameplateListener()
 
     local Window = Rayfield:CreateWindow({
-        name = "Fatal Labs",
+        name = "nexorahub",
         subtitle = "basketball suite",
         size = UDim2.fromOffset(620, 480),
         font = Enum.Font.Gotham,
         icon = 135101778515904,
         sidebarLayout = true,
         inlineDescription = true,
-        theme = "Fatal Labs",
+        theme = "nexorahub",
         userInfo = {
             Title = LocalPlayer.DisplayName,
             Subtitle = "@" .. LocalPlayer.Name,
             Icons = 135101778515904,
         },
         openButton = isMobile and {
-            Title = "Fatal Labs",
+            Title = "nexorahub",
             Subtitle = "tap to open",
             Icons = 135101778515904,
         } or nil,
         configuration = {
             autoSave = true,
             autoLoad = false,
-            fileName = "FatalLabs",
+            fileName = "nexorahub",
         },
     })
 
     pcall(function()
-        if Rayfield.SetTheme then Rayfield:SetTheme("Fatal Labs") end
+        if Rayfield.SetTheme then Rayfield:SetTheme("nexorahub") end
     end)
 
-    Notify = function(props) Window:Notify(props) end
+    Notify = function(props) pcall(function() Window:Notify(props) end) end
 
     local CombatTab = Window:CreateTab({ name = "Combat", icon = "swords" })
     local BallTab = Window:CreateTab({ name = "Ball", icon = "circle" })
@@ -2413,7 +1419,7 @@ end)
     })
     CombatTab:CreateKeybind({
         name = "Aimbot keybind",
-        flag = "fatal_aural_key",
+        flag = "NEXORA_aural_key",
         value = s.Shooting.AuralKeybind,
         callback = function(key)
             if typeof(key) == "EnumItem" then
@@ -2974,6 +1980,13 @@ end)
         pcall(resetGoalEffect)
         pcall(stopAntiMod)
         pcall(function() setShotIndicator(false) end)
-        for _, c in Cleanup.conns do pcall(function() c:Disconnect() end) end
+        for _, c in ipairs(Cleanup.conns) do pcall(function() c:Disconnect() end) end
+        for _, fn in ipairs(Cleanup.fns) do pcall(fn) end
     end)
+
+    Track(LocalPlayer.AncestryChanged:Connect(function()
+        if not LocalPlayer.Parent then
+            for _, fn in ipairs(Cleanup.fns) do pcall(fn) end
+        end
+    end))
 end
